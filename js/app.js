@@ -58,7 +58,7 @@ const openEditor=async(id,first)=>{
  if(!first)L.show('Opening your project',20);
  try{await VN.Store.flush();L.set(45);await VN.Store.load(id)}
  catch(e){toast("That project isn't in this browser anymore.");history.replaceState(null,'','#/');await showHome();if(!first)await L.hide(0);return}
- L.set(80);show('editor');$('#pname').value=VN.pname;VN.UI.bgList();VN.UI.spList();VN.UI.sync();
+ L.set(80);show('editor');$('#pname').value=VN.pname;VN.UI.bgList();VN.UI.spList();VN.UI.itList();VN.UI.sync();
  if(!first)await L.hide(350)};
 const route=async first=>{const m=location.hash.match(/^#\/p\/([\w-]+)$/);m?await openEditor(m[1],first):await showHome()};
 window.addEventListener('hashchange',()=>route(false));

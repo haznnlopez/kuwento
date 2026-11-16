@@ -2,7 +2,7 @@
 // 'index' = light info for the projects page.
 (()=>{
 const S=VN.Store={ready:false,sig:'',warned:false};
-const kindOf={sprite:'sprites',bg:'bgs'};
+const kindOf={sprite:'sprites',bg:'bgs',item:'items'};
 // ---- open / migrate
 const open=()=>new Promise((res,rej)=>{const r=indexedDB.open('kuwento',3);
  r.onupgradeneeded=e=>{const db=r.result,t=r.transaction;
@@ -12,7 +12,7 @@ const open=()=>new Promise((res,rej)=>{const r=indexedDB.open('kuwento',3);
   const convert=p=>{const map={},L=t.objectStore('library');
    (p.sprites||[]).forEach(s=>{const id=VN.aid();map[s.id]=id;L.put({id,kind:'sprite',name:s.name,blob:s.blob,added:now})});
    (p.bgs||[]).forEach(b=>{const id=VN.aid();map[b.id]=id;L.put({id,kind:'bg',name:'Backdrop',blob:b.blob,added:now})});
-   p.scenes.forEach(sc=>{if(sc.bg)sc.bg=map[sc.bg]||null;(sc.chars||[]).forEach(c=>{if(map[c.sid])c.sid=map[c.sid]})});
+   p.scenes.forEach(sc=>{if(sc.bg)sc.bg=map[sc.bg]||null;if(sc.itemId)sc.itemId=map[sc.itemId]||null;(sc.chars||[]).forEach(c=>{if(map[c.sid])c.sid=map[c.sid]})});
    const q={...p};delete q.sprites;delete q.bgs;return q};
   if(e.oldVersion===1)t.objectStore('kv').get('project').onsuccess=ev=>{const p=ev.target.result;if(!p)return;const id='p'+now.toString(36),q=convert(p);
    t.objectStore('projects').put({...q,id,name:'My first project',created:now,updated:now});t.objectStore('index').put({id,name:'My first project',created:now,updated:now,scenes:p.scenes.length,thumb:null})};
@@ -28,12 +28,13 @@ S.status=t=>{const e=document.getElementById('saveState');if(e)e.textContent=t};
 // ---- shared library of uploads
 S.loadLibrary=async()=>{const items=(await tx('library','readonly',s=>s.getAll())).sort((a,b)=>a.added-b.added);
  VN.sprites=await Promise.all(items.filter(i=>i.kind==='sprite').map(async o=>{const bm=await createImageBitmap(o.blob),cv=document.createElement('canvas');cv.width=bm.width;cv.height=bm.height;cv.getContext('2d').drawImage(bm,0,0);return{id:o.id,name:o.name,cv,blob:o.blob,added:o.added}}));
+ VN.items=await Promise.all(items.filter(i=>i.kind==='item').map(async o=>{const bm=await createImageBitmap(o.blob),cv=document.createElement('canvas');cv.width=bm.width;cv.height=bm.height;cv.getContext('2d').drawImage(bm,0,0);return{id:o.id,name:o.name,cv,blob:o.blob,added:o.added}}));
  VN.bgs=await Promise.all(items.filter(i=>i.kind==='bg').map(async o=>{const img=new Image();img.src=URL.createObjectURL(o.blob);await img.decode();return{id:o.id,img,blob:o.blob,added:o.added}}))};
 S.putAsset=async(kind,a)=>{if(!S.ready)return;try{a.added=a.added||Date.now();if(!a.blob)a.blob=await blobOf(a.cv);
  await tx('library','readwrite',l=>l.put({id:a.id,kind,name:a.name||'',blob:a.blob,added:a.added}))}
  catch(e){S.status('Not saved');if(!S.warned){S.warned=true;VN.UI&&VN.UI.toast("Couldn't save your upload to this browser. Private windows or a full disk can block it.")}}};
 // removing an upload also removes it from every project that used it
-S.removeAsset=async(kind,id)=>{const fix=sc=>{let ch=false;if(sc.bg===id){sc.bg=null;ch=true}const n=(sc.chars||[]).length;sc.chars=(sc.chars||[]).filter(c=>c.sid!==id);if(sc.speakerId&&!sc.chars.some(c=>c.uid===sc.speakerId))sc.speakerId=null;return ch||sc.chars.length!==n};
+S.removeAsset=async(kind,id)=>{const fix=sc=>{let ch=false;if(sc.bg===id){sc.bg=null;ch=true}if(sc.itemId===id){sc.itemId=null;ch=true}const n=(sc.chars||[]).length;sc.chars=(sc.chars||[]).filter(c=>c.sid!==id);if(sc.speakerId&&!sc.chars.some(c=>c.uid===sc.speakerId))sc.speakerId=null;return ch||sc.chars.length!==n};
  if(S.ready)await tx(['library','projects'],'readwrite',(l,p)=>{l.delete(id);p.openCursor().onsuccess=ev=>{const c=ev.target.result;if(!c)return;const v=c.value;if(v.scenes.map(fix).some(Boolean))c.update(v);c.continue()}});
  VN[kindOf[kind]]=VN[kindOf[kind]].filter(a=>a.id!==id);VN.scenes.forEach(fix);VN.sel=null};
 
@@ -61,8 +62,8 @@ S.duplicate=async id=>{const p=await S.get(id),ix=await tx('index','readonly',s=
  await tx(['projects','index'],'readwrite',(P,I)=>{P.put({...p,id:nid,name,created:now,updated:now});return I.put({...ix,id:nid,name,created:now,updated:now})});return nid};
 S.remove=id=>tx(['projects','index'],'readwrite',(p,i)=>{p.delete(id);return i.delete(id)}); // uploads stay in the library
 // files: uploads join the shared library (same id = already there); ids from older files get fresh ones so projects can't clash
-S.importData=async(d,fallback)=>{const id=newId(),now=Date.now(),blob=async u=>(await fetch(u)).blob(),isG=x=>/^a[0-9a-z]{9,}$/.test(x),have=new Set([...VN.sprites,...VN.bgs].map(a=>a.id)),map={},add=[],name=(d.name||fallback||'Imported project').slice(0,80);
- for(const[kind,list,src]of[['sprite',d.sprites,'png'],['bg',d.bgs,'data']])for(const a of list){const nid=isG(a.id)?a.id:VN.aid();map[a.id]=nid;if(!have.has(nid))add.push({id:nid,kind,name:kind==='bg'?'Backdrop':a.name,blob:await blob(a[src]),added:now})}
+S.importData=async(d,fallback)=>{const id=newId(),now=Date.now(),blob=async u=>(await fetch(u)).blob(),isG=x=>/^a[0-9a-z]{9,}$/.test(x),have=new Set([...VN.sprites,...VN.bgs,...VN.items].map(a=>a.id)),map={},add=[],name=(d.name||fallback||'Imported project').slice(0,80);
+ for(const[kind,list,src]of[['sprite',d.sprites,'png'],['bg',d.bgs,'data'],['item',d.items||[],'png']])for(const a of list){const nid=isG(a.id)?a.id:VN.aid();map[a.id]=nid;if(!have.has(nid))add.push({id:nid,kind,name:kind==='bg'?'Backdrop':a.name,blob:await blob(a[src]),added:now})}
  const scenes=JSON.parse(JSON.stringify(d.scenes));scenes.forEach(sc=>{if(sc.bg)sc.bg=map[sc.bg]||null;(sc.chars||[]).forEach(c=>{if(map[c.sid])c.sid=map[c.sid]})});
  await tx(['library','projects','index'],'readwrite',(l,p,i)=>{add.forEach(a=>l.put(a));p.put({id,name,created:now,updated:now,scenes,cur:d.cur|0,uid:VN.Project.maxId(d)});return i.put({id,name,created:now,updated:now,scenes:scenes.length,thumb:null})});
  if(add.length)await S.loadLibrary();return id};

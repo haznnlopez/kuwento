@@ -17,21 +17,28 @@ function wrap(ctx,t,mw){const out=[];t.split('\n').forEach(p=>{let l='';p.split(
  if(l)out.push(l);l=w;while(ctx.measureText(l).width>mw&&l.length>1){let i=l.length-1;while(i>1&&ctx.measureText(l.slice(0,i)).width>mw)i--;out.push(l.slice(0,i));l=l.slice(i)}});out.push(l)});return out}
 // character box: 1360px wide; narrator box: 400px tall (both scaled proportionally)
 function dialog(ctx,s){
- const a=A[s.type],K=s.type==='char'?1360/a.w:400/a.h,w=a.w*K,h=a.h*K,x=(VN.W-w)/2,y=VN.H-MARGIN-h,fl=s.flipBox;
+ const item=s.type==='item',key=item?'narr':s.type,a=A[key],K=item?190/a.h:(s.type==='char'?1360/a.w:400/a.h),w=a.w*K,h=a.h*K,x=(VN.W-w)/2,y=VN.H-MARGIN-h,fl=item?false:s.flipBox; // item scenes use a small narrator box
  const fx=(l,r)=>fl?[1-r,1-l]:[l,r];
  ctx.save();ctx.imageSmoothingQuality='high';
- if(fl){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(box[s.type],0,0,w,h)}else ctx.drawImage(box[s.type],x,y,w,h);
+ if(fl){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(box[key],0,0,w,h)}else ctx.drawImage(box[key],x,y,w,h);
  ctx.restore();
  ctx.fillStyle='#56250c';ctx.textBaseline='middle';ctx.textAlign='center';
  if(s.type==='char'&&s.name){const n=a.name,[l,r]=fx(n[0],n[2]),nx=x+l*w,ny=y+n[1]*h,nw=(r-l)*w,nh=(n[3]-n[1])*h;let fs=40;
   do{ctx.font=`${fs}px ${FONT}`;fs-=2}while(ctx.measureText(s.name).width>nw-24&&fs>14);
   ctx.fillText(s.name,nx+nw/2,ny+nh/2+2)}
- if(!s.text)return;
- const c=a.cream,[l,r]=fx(c[0],c[2]),padX=56,padY=28,tx=x+l*w+padX,ty=y+c[1]*h+padY,tw=(r-l)*w-padX*2,th=(c[3]-c[1])*h-padY*2;
- let fs=36,lines;for(;;){ctx.font=`${fs}px ${FONT}`;lines=wrap(ctx,s.text,tw);if(lines.length*fs*1.25<=th||fs<=16)break;fs-=2}
+ const msg=item?('Received: '+(s.itemName||'')).trim():s.text;if(!msg)return;
+ const c=a.cream,[l,r]=fx(c[0],c[2]),padX=item?34:56,padY=item?20:28,tx=x+l*w+padX,ty=y+c[1]*h+padY,tw=(r-l)*w-padX*2,th=(c[3]-c[1])*h-padY*2;
+ let fs=36,lines;for(;;){ctx.font=`${fs}px ${FONT}`;lines=wrap(ctx,msg,tw);if(lines.length*fs*1.25<=th||fs<=16)break;fs-=2}
  const lh=fs*1.25,top=ty+th/2-lines.length*lh/2;
  lines.forEach((t,i)=>ctx.fillText(t,tx+tw/2,top+(i+.5)*lh));
 }
+// faint golden glow and soft rays behind a received item
+function shine(ctx,cx,cy,r){ctx.save();ctx.translate(cx,cy);ctx.globalCompositeOperation='screen';
+ const rr=Math.max(120,r)*1.45,g=ctx.createRadialGradient(0,0,0,0,0,rr);g.addColorStop(0,'rgba(255,214,120,.42)');g.addColorStop(.45,'rgba(255,190,80,.17)');g.addColorStop(1,'rgba(255,180,60,0)');
+ ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,rr,0,Math.PI*2);ctx.fill();
+ for(let i=0;i<14;i++){ctx.save();ctx.rotate(i/14*Math.PI*2+.2);const len=rr*1.2,lg=ctx.createLinearGradient(0,0,len,0);lg.addColorStop(0,'rgba(255,220,130,.075)');lg.addColorStop(1,'rgba(255,220,130,0)');
+  ctx.fillStyle=lg;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(len,-len*.05);ctx.lineTo(len,len*.05);ctx.closePath();ctx.fill();ctx.restore()}
+ ctx.restore()}
 R.draw=(ctx,s,sel)=>{
  const{W,H}=VN;ctx.save();ctx.clearRect(0,0,W,H);ctx.fillStyle='#14121a';ctx.fillRect(0,0,W,H);ctx.imageSmoothingQuality='high';
  const bg=VN.bgs.find(b=>b.id===s.bg);
@@ -41,6 +48,9 @@ R.draw=(ctx,s,sel)=>{
   ctx.save();ctx.translate(r.x+r.w/2,r.y+r.h/2);if(c.flip)ctx.scale(-1,1);
   if(dim){ctx.drawImage(sil(sp),0,0,sp.cv.width,sp.cv.height*R.frac(c),-r.w/2,-r.h/2,r.w,r.h);ctx.globalAlpha=DIM} // black backing so the background doesn't show through
   ctx.drawImage(sp.cv,0,0,sp.cv.width,sp.cv.height*R.frac(c),-r.w/2,-r.h/2,r.w,r.h);ctx.restore()});
+ if(s.type==='item'){const it=VN.items.find(i=>i.id===s.itemId);ctx.fillStyle='rgba(6,8,14,.7)';ctx.fillRect(0,0,W,H); // everything behind the item dims
+  if(it){const k=s.itemScale||1,w=it.cv.width*k,h=it.cv.height*k;shine(ctx,W/2,H/2,Math.max(w,h)/2);
+   ctx.save();ctx.translate(W/2,H/2);ctx.rotate((s.itemRot||0)*Math.PI/180);ctx.shadowColor='rgba(0,0,0,.5)';ctx.shadowBlur=28;ctx.drawImage(it.cv,-w/2,-h/2,w,h);ctx.restore()}}
  dialog(ctx,s);
  const c=sel&&s.chars.find(c=>c.uid===sel),r=c&&R.rect(c);
  if(r){ctx.strokeStyle='#4aa3ff';ctx.lineWidth=3;ctx.setLineDash([12,8]);ctx.strokeRect(r.x,r.y,r.w,r.h);const h=R.handle(c);ctx.setLineDash([]);ctx.fillStyle='#4aa3ff';ctx.fillRect(h.x-h.s/2,h.y-h.s/2,h.s,h.s);ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.strokeRect(h.x-h.s/2,h.y-h.s/2,h.s,h.s)}

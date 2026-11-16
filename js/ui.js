@@ -17,8 +17,14 @@ $('#tl').onclick=()=>panel('no-l','#tl');$('#tr').onclick=()=>panel('no-r','#tr'
 // ---- assets
 UI.confirm=(msg,yes='Delete')=>new Promise(res=>{const d=$('#dlg');$('#dlgMsg').textContent=msg;$('#dlgYes').textContent=yes;const done=v=>{d.close();res(v)};
  $('#dlgYes').onclick=()=>done(true);$('#dlgNo').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false)};d.showModal();$('#dlgNo').focus()});
-const dropAsset=async(kind,id,word)=>{if(!await UI.confirm(`Delete this ${word} from your library? It will also be removed from every project that uses it.`))return;await VN.Store.removeAsset(kind,id);VN.commit();UI.bgList();UI.spList();UI.sync()};
+const dropAsset=async(kind,id,word)=>{if(!await UI.confirm(`Delete this ${word} from your library? It will also be removed from every project that uses it.`))return;await VN.Store.removeAsset(kind,id);VN.commit();UI.bgList();UI.spList();UI.itList();UI.sync()};
 UI.bgList=()=>{const g=$('#bgList');g.replaceChildren(...(VN.bgs.length?VN.bgs.map(b=>el('div',{className:'tile'+(VN.cs().bg===b.id?' on':''),onclick:()=>act(()=>VN.cs().bg=b.id)},el('img',{src:b.img.src}),VN.ib('x','',{className:'x',title:'Delete from library',onclick:e=>{e.stopPropagation();dropAsset('bg',b.id,'backdrop')}}))):[el('p',{className:'note',textContent:'No backdrops yet. Uploads are kept for all your projects and cropped to fill the 16:9 frame.'})]))};
+UI.itList=()=>{$('#itList').replaceChildren(...(VN.items.length?VN.items.map(s=>{const th=el('canvas',{width:s.cv.width,height:s.cv.height});th.getContext('2d').drawImage(s.cv,0,0);
+ const inp=el('input',{className:'nm',value:s.name,onclick:e=>e.stopPropagation(),onchange:()=>{s.name=inp.value||s.name;VN.Store.putAsset('item',s);UI.sync()}});
+ return el('div',{className:'tile'+(VN.cs().itemId===s.id?' on':''),title:'Use as the received item',onclick:()=>UI.useItem(s.id)},th,inp,VN.ib('x','',{className:'x',title:'Delete from library',onclick:e=>{e.stopPropagation();dropAsset('item',s.id,'item')}}))}):[el('p',{className:'note',textContent:'No items yet. Add a picture of something a character receives, then click it to show it in this scene.'})]))};
+UI.useItem=id=>act(()=>{const s=VN.cs(),it=VN.items.find(i=>i.id===id);if(!it)return;const prev=VN.items.find(i=>i.id===s.itemId);
+ s.type='item';if(s.itemId!==id){s.itemId=id;s.itemScale=Math.min(VN.H*.42/it.cv.height,VN.W*.4/it.cv.width,8);s.itemRot=0}
+ if(!s.itemName||(prev&&s.itemName===prev.name))s.itemName=it.name});
 UI.spList=()=>{$('#spList').replaceChildren(...VN.sprites.map(s=>{
  const th=el('canvas',{width:s.cv.width,height:s.cv.height,draggable:true,ondragstart:e=>{e.dataTransfer.setData('text/sprite',s.id);$('#host').classList.add('dragging')},ondragend:()=>$('#host').classList.remove('dragging')});
  th.getContext('2d').drawImage(s.cv,0,0);
@@ -28,13 +34,14 @@ UI.spList=()=>{$('#spList').replaceChildren(...VN.sprites.map(s=>{
 UI.place=(sid,side)=>act(()=>{const s=VN.Render.spr(sid),sc=VN.cs(),old=sc.chars.find(c=>c.side===side);if(old&&sc.speakerId===old.uid)sc.speakerId=null;
  sc.chars=sc.chars.filter(c=>c.side!==side);const c={uid:VN.id(),sid,side,scale:Math.min(VN.H*.8/s.cv.height,8),flip:false,view:'full',crop:.55};sc.chars.push(c);VN.sel=c.uid});
 async function addBg(f){try{const img=await loadImg(f),b={id:VN.aid(),img,blob:f};VN.bgs.push(b);await VN.Store.putAsset('bg',b);act(()=>VN.cs().bg=b.id)}catch(e){UI.toast(e.message)}}
-async function addSheets(files){for(const f of files){try{const img=await loadImg(f),found=VN.Sprites.detect(img);
- if(!found.length){UI.toast(`Found no characters in "${f.name}". Use a transparent or plain white background.`);continue}
- for(const c of found){const s={id:VN.aid(),name:`Sprite ${VN.sprites.length+1}`,cv:c};VN.sprites.push(s);await VN.Store.putAsset('sprite',s)}UI.toast(`Cut out ${found.length} character${found.length>1?'s':''} from "${f.name}".`)}
- catch(e){UI.toast(e.message)}}UI.spList()}
-$('#bgUp').onclick=()=>$('#bgFile').click();$('#spUp').onclick=()=>$('#spFile').click();
+async function addSheets(files,kind='sprite'){const isItem=kind==='item',list=()=>isItem?VN.items:VN.sprites,word=isItem?'item':'character';for(const f of files){try{const img=await loadImg(f),found=VN.Sprites.detect(img);
+ if(!found.length){UI.toast(`Found no ${word}s in "${f.name}". Use a transparent or plain white background.`);continue}
+ for(const c of found){const s={id:VN.aid(),name:`${isItem?'Item':'Sprite'} ${list().length+1}`,cv:c};list().push(s);await VN.Store.putAsset(kind,s)}UI.toast(`Cut out ${found.length} ${word}${found.length>1?'s':''} from "${f.name}".`)}
+ catch(e){UI.toast(e.message)}}isItem?UI.itList():UI.spList()}
+$('#bgUp').onclick=()=>$('#bgFile').click();$('#spUp').onclick=()=>$('#spFile').click();$('#itUp').onclick=()=>$('#itFile').click();
 $('#bgFile').onchange=e=>{[...e.target.files].forEach(addBg);e.target.value=''};
 $('#spFile').onchange=e=>{addSheets([...e.target.files]);e.target.value='';setTab('cast')};
+$('#itFile').onchange=e=>{addSheets([...e.target.files],'item');e.target.value='';setTab('items')};
 $('#bgRm').onclick=()=>act(()=>VN.cs().bg=null);
 
 // ---- script panel
@@ -57,7 +64,7 @@ $('#scaleNum').onchange=e=>{const c=VN.selChar();if(!c)return;const v=Math.min(1
 $('#scaleNum').onkeydown=e=>{if(e.key==='Enter')e.target.blur()};
 $('#ctx').onwheel=e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)&&e.currentTarget.scrollWidth>e.currentTarget.clientWidth){e.currentTarget.scrollLeft+=e.deltaY;e.preventDefault()}};
 $$('#views button').forEach(b=>b.onclick=()=>act(()=>{const c=VN.selChar(),v=b.dataset.view;if(!c||(c.view||'full')===v)return;c.view=v;c.scale=Math.min(10,Math.max(.05,c.scale*(v==='torso'?1.5:1/1.5)))}));
-$$('#views button').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.view==='torso')requestAnimationFrame(()=>$('#cropRow').scrollIntoView({inline:'nearest',block:'nearest'}))}));
+$$('#views button').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.view==='torso')requestAnimationFrame(()=>{const t=$('#ctx'),a=$('#cropRow').getBoundingClientRect(),b=t.getBoundingClientRect();if(a.right>b.right)t.scrollLeft+=a.right-b.right+8})}));
 $('#crop').oninput=e=>{const c=VN.selChar();if(!c)return;c.crop=e.target.value/100;$('#cropNum').value=e.target.value;VN.Render.paint()};
 $('#crop').onchange=()=>{VN.commit();UI.light()};
 // the cut height is typable too: live while valid (30-90), clamped when you finish
@@ -80,12 +87,24 @@ cv.onpointerdown=e=>{if(VN.preview)return;const[x,y]=pt(e),sel=VN.selChar();
  const hit=[...VN.cs().chars].reverse().find(c=>VN.Render.hit(c,x,y));VN.sel=hit?hit.uid:null;UI.sync()};
 cv.onpointermove=e=>{if(!rs)return;const[x,y]=pt(e);rs.c.scale=Math.min(10,Math.max(.05,rs.s0*Math.hypot(x-rs.ax,y-VN.H)/rs.d0));VN.Render.paint();sizeUI(rs.c)};
 cv.onpointerup=()=>{if(rs){rs=null;VN.commit();UI.sync()}};
-cv.onwheel=e=>{const c=VN.selChar();if(!c)return;e.preventDefault();c.scale=Math.min(10,Math.max(.05,c.scale*(e.deltaY<0?1.04:.96)));VN.Render.paint();sizeUI(c);clearTimeout(wt);wt=setTimeout(()=>{VN.commit();UI.sync()},400)};
+cv.onwheel=e=>{const c=VN.selChar(),s0=VN.cs();if(!c){if(s0.type==='item'&&s0.itemId){e.preventDefault();s0.itemScale=clampN((s0.itemScale||1)*(e.deltaY<0?1.04:.96),.05,10);VN.Render.paint();$('#itemScale').value=Math.min(1000,Math.round(s0.itemScale*100));UI.fills();clearTimeout(wt);wt=setTimeout(()=>{VN.commit();UI.sync()},400)}return}e.preventDefault();c.scale=Math.min(10,Math.max(.05,c.scale*(e.deltaY<0?1.04:.96)));VN.Render.paint();sizeUI(c);clearTimeout(wt);wt=setTimeout(()=>{VN.commit();UI.sync()},400)};
 const slotAt=e=>SIDES[Math.min(2,pt(e)[0]*3/VN.W|0)];
 const guides=$('#guides');SIDES.forEach(sd=>guides.append(el('div',{className:'slot',textContent:cap(sd)})));
 cv.ondragover=e=>{e.preventDefault();const i=SIDES.indexOf(slotAt(e));$$('.slot').forEach((g,j)=>g.classList.toggle('hot',i===j))};
 cv.ondrop=e=>{e.preventDefault();$('#host').classList.remove('dragging');const id=e.dataTransfer.getData('text/sprite');if(id)UI.place(id,slotAt(e))};
 cv.onclick=()=>{if(VN.preview)go(1)};
+
+// ---- item scene controls: the item always stays at the centre; it can be enlarged and tilted
+const clampN=(v,a,b)=>Math.min(b,Math.max(a,v)),setItem=(k,v)=>{VN.cs()[k]=v;VN.Render.paint()};
+$('#itemName').oninput=e=>{VN.cs().itemName=e.target.value;VN.Render.paint()};$('#itemName').onchange=()=>{VN.commit();UI.light()};
+$('#itemScale').oninput=e=>{setItem('itemScale',e.target.value/100);$('#itemScaleNum').value=e.target.value};$('#itemScale').onchange=()=>{VN.commit();UI.light()};
+$('#itemScaleNum').oninput=e=>{const v=parseFloat(e.target.value);if(v>=5&&v<=1000){setItem('itemScale',v/100);$('#itemScale').value=Math.min(1000,v);UI.fills()}};
+$('#itemScaleNum').onchange=e=>{const v=clampN(Math.round(parseFloat(e.target.value))||Math.round((VN.cs().itemScale||1)*100),5,1000);e.target.value=v;setItem('itemScale',v/100);VN.commit();UI.sync()};
+$('#itemRot').oninput=e=>{setItem('itemRot',+e.target.value);$('#itemRotNum').value=e.target.value};$('#itemRot').onchange=()=>{VN.commit();UI.light()};
+$('#itemRotNum').oninput=e=>{const v=parseFloat(e.target.value);if(v>=-180&&v<=180){setItem('itemRot',v);$('#itemRot').value=clampN(v,-45,45);UI.fills()}};
+$('#itemRotNum').onchange=e=>{const v=clampN(Math.round(parseFloat(e.target.value))||0,-180,180);e.target.value=v;setItem('itemRot',v);VN.commit();UI.sync()};
+['#itemScaleNum','#itemRotNum'].forEach(q=>$(q).onkeydown=e=>{if(e.key==='Enter')e.target.blur()});
+$('#itemClear').onclick=()=>act(()=>{VN.cs().itemId=null});
 
 // ---- scenes + filmstrip
 const goTo=i=>{if(i<0||i>=VN.scenes.length||i===VN.cur)return;VN.cur=i;VN.sel=null;VN.commit();UI.sync()},go=d=>goTo(VN.cur+d);
@@ -101,7 +120,7 @@ const strip=()=>{$('#strip').replaceChildren(...VN.scenes.map((sc,i)=>{
   thumb(sc,292),el('b',{textContent:i+1}),
   el('div',{className:'tools'},VN.ib('copy','',{title:'Duplicate scene',onclick:e=>{e.stopPropagation();addAfter(i,JSON.parse(JSON.stringify(sc)))}}),VN.ib('trash','',{title:'Delete scene',onclick:e=>{e.stopPropagation();rmAt(i)}})));return d}),
  VN.ib('plus','New scene',{className:'addsc',onclick:()=>addAfter(VN.cur,VN.blank())}));
- $('#strip .on')?.scrollIntoView({inline:'nearest',block:'nearest'})};
+ const st=$('#strip'),on=st.querySelector('.th.on');if(on){const a=on.getBoundingClientRect(),b=st.getBoundingClientRect();if(a.left<b.left)st.scrollLeft-=b.left-a.left+8;else if(a.right>b.right)st.scrollLeft+=a.right-b.right+8}};
 $('#undo').onclick=()=>{if(VN.jump(-1))UI.sync()};$('#redo').onclick=()=>{if(VN.jump(1))UI.sync()};
 
 // ---- project files
@@ -132,15 +151,20 @@ UI.sync=()=>{
  const s=VN.cs(),f=(i,v)=>{if(document.activeElement!==i)i.value=v};
  f($('#speaker'),s.name);f($('#text'),s.text);grow();$('#flipBox').checked=!!s.flipBox;$('#dim').checked=s.dim!==false;
  $('#nameRow').hidden=$('#opts').hidden=s.type!=='char';
+ const isItem=s.type==='item',it=VN.items.find(i=>i.id===s.itemId);$('#itemPanel').hidden=!isItem;$('#textSec').hidden=isItem;
+ if(isItem){f($('#itemName'),s.itemName||'');const pc=Math.round((s.itemScale||1)*100),ro=Math.round(s.itemRot||0),sn=$('#itemScaleNum'),rn=$('#itemRotNum');
+  $('#itemScale').value=Math.min(1000,pc);if(document.activeElement!==sn)sn.value=pc;$('#itemRot').value=clampN(ro,-45,45);if(document.activeElement!==rn)rn.value=ro;
+  $('#itemHint').textContent=it?`"${it.name}" shows at the center and the scene dims. Characters stay, dimmed with the background.`:'No item chosen yet. Open the Items tab on the left and click one.';
+  $$('#itemPanel .ctl input,#itemPanel .ctl button,#itemClear').forEach(x=>x.disabled=!it)}
  const present=SIDES.map(sd=>s.chars.find(c=>c.side===sd)).filter(Boolean);
- $('#chips').replaceChildren(VN.ib('book','Narrator',{className:'chip nar'+(s.type==='narr'?' on':''),onclick:()=>act(()=>s.type='narr')}),
+ $('#chips').replaceChildren(VN.ib('book','Narrator',{className:'chip nar'+(s.type==='narr'?' on':''),onclick:()=>act(()=>s.type='narr')}),VN.ib('gift','Item',{className:'chip nar'+(s.type==='item'?' on':''),title:'Show a received item',onclick:()=>act(()=>s.type='item')}),
   ...present.map(c=>el('button',{className:'chip'+(s.type==='char'&&s.speakerId===c.uid?' on':''),onclick:()=>pick(c),title:`${cap(c.side)}: ${nm(c)}`},face(c),el('span',{textContent:nm(c)}))));
- $('#tip').textContent=present.length?(s.type==='narr'?'Narration uses the plain box with no name plate.':'Pick who is speaking. The box moves to their side and the others dim.'):'Add characters from the Cast tab to choose who speaks.';
+ $('#tip').textContent=s.type==='item'?'An item scene: the whole scene dims, the item glows at the center, and a small box says what was received.':present.length?(s.type==='narr'?'Narration uses the plain box with no name plate.':'Pick who is speaking. The box moves to their side and the others dim.'):'Add characters from the Cast tab to choose who speaks.';
  UI.ctx();
  $('#undo').setAttribute('aria-disabled',VN.hi<=0);$('#redo').setAttribute('aria-disabled',VN.hi>=VN.hist.length-1);$('#prev').setAttribute('aria-disabled',VN.cur===0);$('#next').setAttribute('aria-disabled',VN.cur===VN.scenes.length-1);
  $('#count').textContent=`Scene ${VN.cur+1} of ${VN.scenes.length}`;
- UI.fills();UI.bgList();strip();VN.Render.paint();VN.Store.persist();
+ UI.fills();UI.bgList();UI.itList();strip();VN.Render.paint();VN.Store.persist();
 };
-UI.bgList();UI.spList();UI.sync();
+UI.bgList();UI.spList();UI.itList();UI.sync();
 document.fonts.load('36px "One Little Font"').then(UI.sync).catch(()=>{});
 })();

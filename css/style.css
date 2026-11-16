@@ -190,3 +190,19 @@ dialog p{margin:0}.dlgBtns{display:flex;justify-content:flex-end;gap:8px;margin-
 
 /* "disabled" look that still lets the tooltip show */
 button[aria-disabled=true]{opacity:.35;cursor:default}#top button[aria-disabled=true]:hover,.nav button[aria-disabled=true]:hover{background:transparent}
+
+/* ---------- the workspace stays put: many scenes scroll inside the strip, they never widen the page ---------- */
+html,body{overflow-x:hidden}
+#editor{grid-template-columns:minmax(0,1fr);overflow:hidden;width:100%;max-width:100vw}
+#editor>*{min-width:0}footer,#strip{min-width:0;max-width:100%}
+@media(min-width:901px){main{grid-template-columns:var(--lw) minmax(0,1fr) var(--rw)}}
+/* tabs stack icon over label so three fit */
+.tab{flex-direction:column;gap:2px;padding:9px 0 8px;font-size:14.5px}
+/* item controls in the script panel */
+.ctl{display:flex;align-items:center;gap:9px;margin-top:12px;color:var(--mute)}.ctl>.ic{flex:none}
+.ctl input[type=range]{flex:1;min-width:0}
+.ctl input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(90deg,var(--signal) var(--fill,0%),var(--track) var(--fill,0%))}
+.ctl input[type=range]::-moz-range-track{background:var(--track)}
+.num.light{border-color:var(--line)}.num.light .st{background:var(--paper2);color:var(--text)}.num.light .st:hover{background:var(--line)}
+.num.light input[type=number]{width:52px;padding:4px 2px;text-align:center;color:var(--text);font:inherit}
+#itemPanel .ghostb{margin-top:14px}#itemPanel .ghostb:disabled{opacity:.4}
