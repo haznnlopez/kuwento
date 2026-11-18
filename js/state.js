@@ -11,3 +11,5 @@ VN.aid=()=>'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); //
 // icons: inline SVG symbols defined at the top of index.html
 VN.ic=n=>`<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 VN.ib=(icon,label,p={})=>{const b=document.createElement('button');Object.assign(b,p);b.innerHTML=VN.ic(icon)+(label?`<span class="lbl">${label}</span>`:'');b.setAttribute('aria-label',label||p.title||icon);return b};
+// every download goes through here: the link is attached to the page (Firefox needs that) and the blob URL lives long enough for large files
+VN.download=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href)},180000)};

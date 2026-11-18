@@ -2,9 +2,9 @@
 // shapes, merge nearby fragments, crop each group with a transparent background.
 (()=>{
 const S=VN.Sprites={};
-S.detect=img=>{
- const w=img.naturalWidth,h=img.naturalHeight,N=w*h,cv=document.createElement('canvas');cv.width=w;cv.height=h;
- const x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0);const src=x.getImageData(0,0,w,h),d=src.data;
+// core(): pure typed-array work, so it can run inside a Worker
+const core=(d,w,h)=>{
+ const N=w*h;
  let tr=0;for(let i=3;i<d.length;i+=4)if(d[i]<250)tr++;
  const hasA=tr>N*.005; // sheet already has a transparent background: keep pixels exactly as they are
  const near=i=>{const j=i*4;return d[j+3]<12||(d[j]>238&&d[j+1]>238&&d[j+2]>238)};
@@ -35,11 +35,17 @@ S.detect=img=>{
  gs.sort((a,b)=>a[1].y0+a[1].y1-b[1].y0-b[1].y1);const rows=[];
  gs.forEach(g=>{const cy=(g[1].y0+g[1].y1)/2,hh=g[1].y1-g[1].y0,row=rows.find(r=>Math.abs(r.cy-cy)<hh*.5);row?row.g.push(g):rows.push({cy,g:[g]})});
  gs=rows.flatMap(r=>r.g.sort((a,b)=>a[1].x0-b[1].x0));
- return gs.map(([root,g])=>{const cw=g.x1-g.x0+1,ch=g.y1-g.y0+1,out=document.createElement('canvas');out.width=cw;out.height=ch;
-  const ox=out.getContext('2d'),im=ox.createImageData(cw,ch);
+ return gs.map(([root,g])=>{const cw=g.x1-g.x0+1,ch=g.y1-g.y0+1,buf=new Uint8ClampedArray(cw*ch*4),im={data:buf};
   for(let y=0;y<ch;y++)for(let xx=0;xx<cw;xx++){const i=(y+g.y0)*w+xx+g.x0,l=lab[i];if(l&&owner[l]==+root){const o=(y*cw+xx)*4,j=i*4;let r=d[j],gr=d[j+1],bl=d[j+2],al=d[j+3];
    if(!hasA&&touch(i)){const m=Math.min(r,gr,bl);if(m>140){const k=Math.max(.3,(255-m)/115),u=v=>Math.max(0,Math.min(255,(v-255*(1-k))/k));r=u(r);gr=u(gr);bl=u(bl);al*=k}}
    im.data[o]=r;im.data[o+1]=gr;im.data[o+2]=bl;im.data[o+3]=al}}
-  ox.putImageData(im,0,0);return out});
+  return{w:cw,h:ch,buf}});
 };
+
+let wk;const worker=()=>{if(wk!==undefined)return wk;try{wk=new Worker(URL.createObjectURL(new Blob(['self.onmessage=e=>{const{d,w,h}=e.data,out=('+core.toString()+')(d,w,h);self.postMessage(out,out.map(g=>g.buf.buffer))}'],{type:'text/javascript'})))}catch(e){wk=null}return wk};
+const pixels=img=>{const w=img.naturalWidth,h=img.naturalHeight,cv=document.createElement('canvas');cv.width=w;cv.height=h;const x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0);return{w,h,d:x.getImageData(0,0,w,h).data}};
+S.detect=async img=>{let{w,h,d}=pixels(img),groups=null;const k=worker();
+ if(k){try{groups=await new Promise((res,rej)=>{k.onmessage=e=>res(e.data);k.onerror=ev=>rej(ev);k.postMessage({d,w,h},[d.buffer])})}catch(e){wk=null;d=null}}
+ if(!groups){if(!d||!d.length)d=pixels(img).d;groups=core(d,w,h)}
+ return groups.map(g=>{const c=document.createElement('canvas');c.width=g.w;c.height=g.h;c.getContext('2d').putImageData(new ImageData(g.buf,g.w,g.h),0,0);return c})};
 })();

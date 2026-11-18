@@ -40,7 +40,7 @@ const card=p=>{
  const nm=el('input',{className:'pn',value:p.name,'aria-label':'Project name',onchange:async()=>{const v=nm.value.trim()||p.name;nm.value=v;await VN.Store.rename(p.id,v)}});
  nm.onkeydown=e=>{if(e.key==='Enter')nm.blur()};
  return el('article',{className:'proj'},
-  el('button',{className:'open',title:`Open ${p.name}`,onclick:()=>go(p.id)},p.thumb?el('img',{src:p.thumb,alt:''}):el('span',{className:'noth',textContent:'Open to see a preview'})),
+  el('button',{className:'open',title:`Open ${p.name}`,onclick:()=>go(p.id)},p.thumb?el('img',{src:p.thumb,alt:'',loading:'lazy',decoding:'async'}):el('span',{className:'noth',textContent:'Open to see a preview'})),
   el('div',{className:'pinfo'},nm,el('span',{className:'pm',textContent:`${p.scenes} scene${p.scenes==1?'':'s'}, edited ${ago(p.updated)}`})),
   el('div',{className:'pact'},
    VN.ib('copy','Duplicate',{onclick:async()=>{await VN.Store.duplicate(p.id);renderHome()}}),
@@ -58,7 +58,7 @@ const openEditor=async(id,first)=>{
  if(!first)L.show('Opening your project',20);
  try{await VN.Store.flush();L.set(45);await VN.Store.load(id)}
  catch(e){toast("That project isn't in this browser anymore.");history.replaceState(null,'','#/');await showHome();if(!first)await L.hide(0);return}
- L.set(80);show('editor');$('#pname').value=VN.pname;VN.UI.bgList();VN.UI.spList();VN.UI.itList();VN.UI.sync();
+ L.set(80);show('editor');$('#pname').value=VN.pname;VN.UI.refreshAssets();VN.UI.sync();
  if(!first)await L.hide(350)};
 const route=async first=>{const m=location.hash.match(/^#\/p\/([\w-]+)$/);m?await openEditor(m[1],first):await showHome()};
 window.addEventListener('hashchange',()=>route(false));

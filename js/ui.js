@@ -2,8 +2,10 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],cv=$('#stage');
 const el=(t,p={},...k)=>{const e=Object.assign(document.createElement(t),p);e.append(...k.flat());return e};
 const UI=VN.UI={},SIDES=['left','center','right'],SX={left:.125,center:.5,right:.875};
-const nm=c=>VN.Render.spr(c.sid)?.name||'Character',cap=s=>s[0].toUpperCase()+s.slice(1);
-UI.toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(UI._t);UI._t=setTimeout(()=>t.classList.remove('on'),4200)};
+const keep={},once=(k,sig,fn)=>{if(keep[k]!==sig){keep[k]=sig;fn()}};
+const nm=c=>VN.sprites.find(a=>a.id===c.sid)?.name||'Character',cap=s=>s[0].toUpperCase()+s.slice(1);
+UI.toast=(m,ms=4200)=>{const t=$('#toast');t.classList.remove('act');t.textContent=m;t.classList.add('on');clearTimeout(UI._t);UI._t=setTimeout(()=>t.classList.remove('on'),ms)};
+UI.notice=(m,label,fn)=>{const t=$('#toast'),b=el('button',{textContent:label,onclick:()=>{fn();t.classList.remove('on')}});t.classList.add('act');t.replaceChildren(m,b);t.classList.add('on');clearTimeout(UI._t);UI._t=setTimeout(()=>t.classList.remove('on','act'),20000)};
 const act=fn=>{fn();VN.commit();UI.sync()};
 const loadImg=file=>new Promise((res,rej)=>{if(!/^image\/(png|jpe?g)$/.test(file.type))return rej(new Error(`"${file.name}" isn't a PNG or JPG image.`));
  const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error(`Couldn't read "${file.name}". Try re-exporting it.`));i.src=URL.createObjectURL(file)});
@@ -14,29 +16,35 @@ const panel=(cls,btn)=>{const b=document.body.classList;b.toggle(cls);if(narrow.
 if(narrow.matches){document.body.classList.add('no-l','no-r');$('#tl').classList.add('off');$('#tr').classList.add('off')}
 $('#tl').onclick=()=>panel('no-l','#tl');$('#tr').onclick=()=>panel('no-r','#tr');
 
+// the tabs' height is needed by the sticky action row under them
+if(window.ResizeObserver)new ResizeObserver(()=>document.documentElement.style.setProperty('--tabsH',$('#rail .tabs').offsetHeight+'px')).observe($('#rail .tabs'));
 // ---- assets
 UI.confirm=(msg,yes='Delete')=>new Promise(res=>{const d=$('#dlg');$('#dlgMsg').textContent=msg;$('#dlgYes').textContent=yes;const done=v=>{d.close();res(v)};
  $('#dlgYes').onclick=()=>done(true);$('#dlgNo').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false)};d.showModal();$('#dlgNo').focus()});
-const dropAsset=async(kind,id,word)=>{if(!await UI.confirm(`Delete this ${word} from your library? It will also be removed from every project that uses it.`))return;await VN.Store.removeAsset(kind,id);VN.commit();UI.bgList();UI.spList();UI.itList();UI.sync()};
-UI.bgList=()=>{const g=$('#bgList');g.replaceChildren(...(VN.bgs.length?VN.bgs.map(b=>el('div',{className:'tile'+(VN.cs().bg===b.id?' on':''),onclick:()=>act(()=>VN.cs().bg=b.id)},el('img',{src:b.img.src}),VN.ib('x','',{className:'x',title:'Delete from library',onclick:e=>{e.stopPropagation();dropAsset('bg',b.id,'backdrop')}}))):[el('p',{className:'note',textContent:'No backdrops yet. Uploads are kept for all your projects and cropped to fill the 16:9 frame.'})]))};
-UI.itList=()=>{$('#itList').replaceChildren(...(VN.items.length?VN.items.map(s=>{const th=el('canvas',{width:s.cv.width,height:s.cv.height});th.getContext('2d').drawImage(s.cv,0,0);
+const dropAsset=async(kind,id,word)=>{if(!await UI.confirm(`Delete this ${word} from your library? It will also be removed from every project that uses it.`))return;await VN.Store.removeAsset(kind,id);VN.commit();UI.refreshAssets();UI.sync()};
+const thumbImg=(a,extra={})=>a.thumb?el('img',{src:a.thumb,alt:'',loading:'lazy',decoding:'async',draggable:false,...extra}):el('div',{className:'ph'});
+UI.bgList=()=>{$('#bgList').replaceChildren(...(VN.bgs.length?VN.bgs.map(b=>el('div',{className:'tile bg'+(VN.cs().bg===b.id?' on':''),onclick:async()=>{await VN.Store.ensure(b);act(()=>VN.cs().bg=b.id)}},thumbImg(b),VN.ib('x','',{className:'x',title:'Delete from library',onclick:e=>{e.stopPropagation();dropAsset('bg',b.id,'backdrop')}}))):[el('p',{className:'note',textContent:'No backdrops yet. Uploads are kept for all your projects and cropped to fill the 16:9 frame.'})]))};
+UI.itList=()=>{$('#itList').replaceChildren(...(VN.items.length?VN.items.map(s=>{
  const inp=el('input',{className:'nm',value:s.name,onclick:e=>e.stopPropagation(),onchange:()=>{s.name=inp.value||s.name;VN.Store.putAsset('item',s);UI.sync()}});
- return el('div',{className:'tile'+(VN.cs().itemId===s.id?' on':''),title:'Use as the received item',onclick:()=>UI.useItem(s.id)},th,inp,VN.ib('x','',{className:'x',title:'Delete from library',onclick:e=>{e.stopPropagation();dropAsset('item',s.id,'item')}}))}):[el('p',{className:'note',textContent:'No items yet. Add a picture of something a character receives, then click it to show it in this scene.'})]))};
-UI.useItem=id=>act(()=>{const s=VN.cs(),it=VN.items.find(i=>i.id===id);if(!it)return;const prev=VN.items.find(i=>i.id===s.itemId);
- s.type='item';if(s.itemId!==id){s.itemId=id;s.itemScale=Math.min(VN.H*.42/it.cv.height,VN.W*.4/it.cv.width,8);s.itemRot=0}
- if(!s.itemName||(prev&&s.itemName===prev.name))s.itemName=it.name});
+ return el('div',{className:'tile'+(VN.cs().itemId===s.id?' on':''),title:'Use as the received item',onclick:()=>UI.useItem(s.id)},thumbImg(s),inp,VN.ib('x','',{className:'x',title:'Delete from library',onclick:e=>{e.stopPropagation();dropAsset('item',s.id,'item')}}))}):[el('p',{className:'note',textContent:'No items yet. Add a picture of something a character receives, then click it to show it in this scene.'})]))};
+UI.useItem=async id=>{const it=VN.items.find(i=>i.id===id);if(!it)return;await VN.Store.ensure(it);act(()=>{const s=VN.cs(),prev=VN.items.find(i=>i.id===s.itemId);s.type='item';
+ if(s.itemId!==id){s.itemId=id;s.itemScale=Math.min(VN.H*.42/it.cv.height,VN.W*.4/it.cv.width,8);s.itemRot=0}
+ if(!s.itemName||(prev&&s.itemName===prev.name))s.itemName=it.name})};
 UI.spList=()=>{$('#spList').replaceChildren(...VN.sprites.map(s=>{
- const th=el('canvas',{width:s.cv.width,height:s.cv.height,draggable:true,ondragstart:e=>{e.dataTransfer.setData('text/sprite',s.id);$('#host').classList.add('dragging')},ondragend:()=>$('#host').classList.remove('dragging')});
- th.getContext('2d').drawImage(s.cv,0,0);
+ const drag={draggable:true,ondragstart:e=>{e.dataTransfer.setData('text/sprite',s.id);$('#host').classList.add('dragging')},ondragend:()=>$('#host').classList.remove('dragging')};
  const inp=el('input',{className:'nm',value:s.name,onchange:()=>{s.name=inp.value||s.name;VN.Store.putAsset('sprite',s);UI.sync()}});
- return el('div',{className:'tile'},th,el('div',{className:'put'},...SIDES.map(sd=>VN.ib(sd,'',{title:'Place on the '+sd,onclick:()=>UI.place(s.id,sd)}))),inp,
+ return el('div',{className:'tile'},thumbImg(s,{...drag}),el('div',{className:'put'},...SIDES.map(sd=>VN.ib(sd,'',{title:'Place on the '+sd,onclick:()=>UI.place(s.id,sd)}))),inp,
   VN.ib('x','',{className:'x',title:'Delete from library',onclick:()=>dropAsset('sprite',s.id,'character')}))}))};
-UI.place=(sid,side)=>act(()=>{const s=VN.Render.spr(sid),sc=VN.cs(),old=sc.chars.find(c=>c.side===side);if(old&&sc.speakerId===old.uid)sc.speakerId=null;
- sc.chars=sc.chars.filter(c=>c.side!==side);const c={uid:VN.id(),sid,side,scale:Math.min(VN.H*.8/s.cv.height,8),flip:false,view:'full',crop:.55};sc.chars.push(c);VN.sel=c.uid});
-async function addBg(f){try{const img=await loadImg(f),b={id:VN.aid(),img,blob:f};VN.bgs.push(b);await VN.Store.putAsset('bg',b);act(()=>VN.cs().bg=b.id)}catch(e){UI.toast(e.message)}}
-async function addSheets(files,kind='sprite'){const isItem=kind==='item',list=()=>isItem?VN.items:VN.sprites,word=isItem?'item':'character';for(const f of files){try{const img=await loadImg(f),found=VN.Sprites.detect(img);
- if(!found.length){UI.toast(`Found no ${word}s in "${f.name}". Use a transparent or plain white background.`);continue}
- for(const c of found){const s={id:VN.aid(),name:`${isItem?'Item':'Sprite'} ${list().length+1}`,cv:c};list().push(s);await VN.Store.putAsset(kind,s)}UI.toast(`Cut out ${found.length} ${word}${found.length>1?'s':''} from "${f.name}".`)}
+UI.refreshAssets=()=>{keep.bg=keep.it=null;UI.bgList();UI.spList();UI.itList()};
+UI.place=async(sid,side)=>{const s=VN.sprites.find(a=>a.id===sid);if(!s)return;await VN.Store.ensure(s);act(()=>{const sc=VN.cs(),old=sc.chars.find(c=>c.side===side);if(old&&sc.speakerId===old.uid)sc.speakerId=null;
+ sc.chars=sc.chars.filter(c=>c.side!==side);const c={uid:VN.id(),sid,side,scale:Math.min(VN.H*.8/s.cv.height,8),flip:false,view:'full',crop:.55};sc.chars.push(c);VN.sel=c.uid})};
+async function addBg(f){try{const img=await loadImg(f),b={id:VN.aid(),kind:'bg',img,blob:f};VN.bgs.push(b);await VN.Store.putAsset('bg',b);act(()=>VN.cs().bg=b.id)}catch(e){UI.toast(e.message)}}
+async function addSheets(files,kind='sprite'){const isItem=kind==='item',list=()=>isItem?VN.items:VN.sprites,word=isItem?'item':'character';
+ for(const f of files){try{const img=await loadImg(f);UI.toast(`Cutting out ${word}s from "${f.name}"…`);await new Promise(r=>setTimeout(r,30)); // let the toast paint; the heavy part runs in a worker
+  const found=await VN.Sprites.detect(img);
+  if(!found.length){UI.toast(`Found no ${word}s in "${f.name}". Use a transparent or plain white background.`);continue}
+  for(const c of found){const s={id:VN.aid(),kind,name:`${isItem?'Item':'Sprite'} ${list().length+1}`,cv:c};list().push(s);await VN.Store.putAsset(kind,s)}
+  UI.toast(`Cut out ${found.length} ${word}${found.length>1?'s':''} from "${f.name}".`)}
  catch(e){UI.toast(e.message)}}isItem?UI.itList():UI.spList()}
 $('#bgUp').onclick=()=>$('#bgFile').click();$('#spUp').onclick=()=>$('#spFile').click();$('#itUp').onclick=()=>$('#itFile').click();
 $('#bgFile').onchange=e=>{[...e.target.files].forEach(addBg);e.target.value=''};
@@ -111,13 +119,19 @@ const goTo=i=>{if(i<0||i>=VN.scenes.length||i===VN.cur)return;VN.cur=i;VN.sel=nu
 $('#prev').onclick=()=>go(-1);$('#next').onclick=()=>go(1);
 const addAfter=(i,data)=>act(()=>{VN.scenes.splice(i+1,0,data);VN.cur=i+1;VN.sel=null});
 const rmAt=i=>act(()=>{if(VN.scenes.length>1){VN.scenes.splice(i,1);if(i<VN.cur||VN.cur>=VN.scenes.length)VN.cur--}else VN.scenes[0]=VN.blank();VN.sel=null});
-const thumb=(sc,w)=>{const t=el('canvas',{width:w,height:w*9/16|0}),x=t.getContext('2d');x.save();x.scale(w/VN.W,w/VN.W);VN.Render.draw(x,sc,null);x.restore();return t};
-const strip=()=>{$('#strip').replaceChildren(...VN.scenes.map((sc,i)=>{
+// scene thumbnails: drawn only when they scroll into view, and remembered by content so unchanged scenes are never redrawn
+const TW=292,thumbCache=new Map(),owner=new WeakMap(),sceneSig=sc=>JSON.stringify(sc);
+const drawThumb=(sc,t)=>{const x=t.getContext('2d');x.save();x.scale(t.width/VN.W,t.width/VN.W);VN.Render.draw(x,sc,null,true);x.restore();t.dataset.done='1'};
+const remember=(sig,t)=>{const c=document.createElement('canvas');c.width=t.width;c.height=t.height;c.getContext('2d').drawImage(t,0,0);thumbCache.set(sig,c);if(thumbCache.size>150)thumbCache.delete(thumbCache.keys().next().value)};
+const io=new IntersectionObserver(es=>es.forEach(en=>{if(!en.isIntersecting)return;const t=en.target,sc=owner.get(t);io.unobserve(t);if(!sc||t.dataset.done)return;drawThumb(sc,t);remember(t.dataset.sig,t)}),{root:$('#strip'),rootMargin:'240px'});
+const thumb=sc=>{const sig=sceneSig(sc),t=el('canvas',{width:TW,height:TW*9/16|0}),hit=thumbCache.get(sig);t.dataset.sig=sig;owner.set(t,sc);
+ if(hit){t.getContext('2d').drawImage(hit,0,0);t.dataset.done='1'}else io.observe(t);return t};
+const strip=()=>{io.disconnect();$('#strip').replaceChildren(...VN.scenes.map((sc,i)=>{
  const d=el('div',{className:'th'+(i===VN.cur?' on':''),draggable:true,title:'Drag to reorder',onclick:()=>goTo(i),
   ondragstart:e=>e.dataTransfer.setData('text/scene',String(i)),
   ondragover:e=>{if(e.dataTransfer.types.includes('text/scene')){e.preventDefault();d.classList.add('over')}},ondragleave:()=>d.classList.remove('over'),
   ondrop:e=>{e.preventDefault();const f=+e.dataTransfer.getData('text/scene');if(f!==i)act(()=>{const[x]=VN.scenes.splice(f,1);VN.scenes.splice(i,0,x);VN.cur=i;VN.sel=null})}},
-  thumb(sc,292),el('b',{textContent:i+1}),
+  thumb(sc),el('b',{textContent:i+1}),
   el('div',{className:'tools'},VN.ib('copy','',{title:'Duplicate scene',onclick:e=>{e.stopPropagation();addAfter(i,JSON.parse(JSON.stringify(sc)))}}),VN.ib('trash','',{title:'Delete scene',onclick:e=>{e.stopPropagation();rmAt(i)}})));return d}),
  VN.ib('plus','New scene',{className:'addsc',onclick:()=>addAfter(VN.cur,VN.blank())}));
  const st=$('#strip'),on=st.querySelector('.th.on');if(on){const a=on.getBoundingClientRect(),b=st.getBoundingClientRect();if(a.left<b.left)st.scrollLeft-=b.left-a.left+8;else if(a.right>b.right)st.scrollLeft+=a.right-b.right+8}};
@@ -141,7 +155,7 @@ document.onkeydown=e=>{if(!VN.inEditor)return;const typing=/INPUT|TEXTAREA/.test
  else if(e.key==='[')$('#tl').click();else if(e.key===']')$('#tr').click()};
 
 // light refresh after typing: redraw thumbnails without rebuilding the strip, so a click on a tile still lands
-UI.light=()=>{$$('#strip .th canvas').forEach((c,i)=>{const sc=VN.scenes[i];if(!sc)return;const x=c.getContext('2d');x.save();x.scale(c.width/VN.W,c.width/VN.W);VN.Render.draw(x,sc,null);x.restore()});$('#undo').setAttribute('aria-disabled',VN.hi<=0);$('#redo').setAttribute('aria-disabled',VN.hi>=VN.hist.length-1)};
+UI.light=()=>{const t=$('#strip .th.on canvas');if(t){const sc=VN.cs();owner.set(t,sc);drawThumb(sc,t);t.dataset.sig=sceneSig(sc);remember(t.dataset.sig,t)}$('#undo').setAttribute('aria-disabled',VN.hi<=0);$('#redo').setAttribute('aria-disabled',VN.hi>=VN.hist.length-1)};
 // slider fill follows the value (WebKit has no native filled track)
 const fill=r=>r.style.setProperty('--fill',((r.value-r.min)/(r.max-r.min)*100)+'%');
 $$('input[type=range]').forEach(r=>{r.addEventListener('input',()=>fill(r));fill(r)});
@@ -163,8 +177,10 @@ UI.sync=()=>{
  UI.ctx();
  $('#undo').setAttribute('aria-disabled',VN.hi<=0);$('#redo').setAttribute('aria-disabled',VN.hi>=VN.hist.length-1);$('#prev').setAttribute('aria-disabled',VN.cur===0);$('#next').setAttribute('aria-disabled',VN.cur===VN.scenes.length-1);
  $('#count').textContent=`Scene ${VN.cur+1} of ${VN.scenes.length}`;
- UI.fills();UI.bgList();UI.itList();strip();VN.Render.paint();VN.Store.persist();
+ UI.fills();once('bg',VN.bgs.map(b=>b.id+(b.thumb?1:0)).join()+'|'+s.bg,UI.bgList);once('it',VN.items.map(i=>i.id+(i.thumb?1:0)).join()+'|'+s.itemId,UI.itList);
+ once('strip',VN.scenes.map(sceneSig).join('')+'|'+VN.cur,strip);VN.Render.paint();VN.Store.persist();
 };
-UI.bgList();UI.spList();UI.itList();UI.sync();
+UI.refreshAssets();UI.sync();
+VN.Store.onThumbs=()=>UI.refreshAssets(); // background thumbnails finished
 document.fonts.load('36px "One Little Font"').then(UI.sync).catch(()=>{});
 })();
